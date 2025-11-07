@@ -40,10 +40,12 @@ archives:
       {{- else if eq .Arch "386" }}i386
       {{- else }}{{ .Arch }}{{ end }}
       {{- if .Arm }}v{{ .Arm }}{{ end }}
-    format: tar.gz
+    formats:
+      - tar.gz
     format_overrides:
       - goos: windows
-        format: zip
+        formats:
+          - zip
     files:
       - README.md
       - LICENSE
@@ -102,8 +104,8 @@ release:
   footer: |
     **Full Changelog**: https://github.com/marco-arnold/lnka/compare/{{ .PreviousTag }}...{{ .Tag }}
 
-# Homebrew formula for macOS/Linux users
-brews:
+# Homebrew cask for macOS/Linux users
+homebrew_casks:
   - repository:
       owner: marco-arnold
       name: homebrew-lnka
@@ -111,7 +113,3 @@ brews:
     homepage: https://github.com/marco-arnold/lnka
     description: CLI tool for managing symlinks with interactive Terminal UI
     license: MIT
-    install: |
-      bin.install "lnka"
-    test: |
-      system "#{bin}/lnka", "--version"
