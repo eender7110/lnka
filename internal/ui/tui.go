@@ -31,6 +31,7 @@ type multiSelectModel struct {
 	aborted         bool            // User pressed ESC
 	title           string          // Optional title
 	maxVisibleItems int             // Maximum items to show before pagination
+	hideUnlinked    bool            // Hide unlinked items when true
 }
 
 // Init initializes the model
@@ -79,8 +80,10 @@ func (m multiSelectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				choices := m.getVisibleChoices()
 				if m.cursor >= 0 && m.cursor < len(choices) {
 					choice := choices[m.cursor]
+					wasSelected := m.selected[choice]
+					currentCursor := m.cursor
 					// Toggle selection
-					if m.selected[choice] {
+					if wasSelected {
 						delete(m.selected, choice)
 						// Remove from order
 						for i, s := range m.selectedOrder {
@@ -89,10 +92,71 @@ func (m multiSelectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 								break
 							}
 						}
+						// Auto-switch to "show all" if we just deselected the last visible linked item
+						if m.hideUnlinked {
+							hasLinkedItems := false
+							for _, c := range choices {
+								if m.selected[c] {
+									hasLinkedItems = true
+									break
+								}
+							}
+							if !hasLinkedItems {
+								// Switch to "show all" and position cursor on the deselected item
+								m.hideUnlinked = false
+								newChoices := m.getVisibleChoices()
+								// Find the deselected item in the new list
+								for i, c := range newChoices {
+									if c == choice {
+										m.cursor = i
+										return m, nil
+									}
+								}
+								m.clampCursor()
+							} else {
+								// In "linked only" mode, adjust cursor after item disappears
+								newChoices := m.getVisibleChoices()
+								if len(newChoices) > 0 {
+									// Try to stay at same index, or move to previous if at end
+									if currentCursor >= len(newChoices) {
+										m.cursor = len(newChoices) - 1
+									}
+									// cursor stays at same index otherwise
+								}
+							}
+						}
 					} else {
 						m.selected[choice] = true
 						m.selectedOrder = append(m.selectedOrder, choice)
 					}
+				}
+			}
+		case "h":
+			if !m.filtering {
+				// Only allow toggle if there are selected items
+				if len(m.selected) > 0 {
+					// Remember current item before toggle
+					choices := m.getVisibleChoices()
+					var currentItem string
+					if m.cursor >= 0 && m.cursor < len(choices) {
+						currentItem = choices[m.cursor]
+					}
+
+					// Toggle mode
+					m.hideUnlinked = !m.hideUnlinked
+
+					// Try to keep cursor on the same item
+					newChoices := m.getVisibleChoices()
+					if currentItem != "" {
+						for i, choice := range newChoices {
+							if choice == currentItem {
+								m.cursor = i
+								return m, nil
+							}
+						}
+					}
+					// If item not found, clamp cursor
+					m.clampCursor()
 				}
 			}
 		case "backspace":
@@ -181,7 +245,17 @@ func (m multiSelectModel) View() string {
 	b.WriteString("\n")
 	b.WriteString(colorHelp)
 	if !m.filtering {
-		b.WriteString("space: toggle | /: filter | enter: confirm | esc: abort")
+		helpText := "space: toggle | /: filter"
+		// Add h: option only if there are selected items
+		if len(m.selected) > 0 {
+			if m.hideUnlinked {
+				helpText += " | h: show all"
+			} else {
+				helpText += " | h: linked only"
+			}
+		}
+		helpText += " | enter: confirm | esc: abort"
+		b.WriteString(helpText)
 	} else {
 		b.WriteString("type to filter | enter: exit filter | esc: abort")
 	}
@@ -190,12 +264,29 @@ func (m multiSelectModel) View() string {
 	return b.String()
 }
 
-// getVisibleChoices returns filtered or all choices
+// getVisibleChoices returns filtered or all choices, respecting hideUnlinked mode
 func (m *multiSelectModel) getVisibleChoices() []string {
+	var baseChoices []string
+
+	// Start with filtered or all choices
 	if m.filter != "" {
-		return m.filtered
+		baseChoices = m.filtered
+	} else {
+		baseChoices = m.choices
 	}
-	return m.choices
+
+	// Apply hideUnlinked filter if active
+	if m.hideUnlinked {
+		visible := make([]string, 0, len(m.selected))
+		for _, choice := range baseChoices {
+			if m.selected[choice] {
+				visible = append(visible, choice)
+			}
+		}
+		return visible
+	}
+
+	return baseChoices
 }
 
 // updateFiltered updates the filtered list
