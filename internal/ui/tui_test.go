@@ -523,3 +523,300 @@ func TestDeselectAll_WithHideUnlinked(t *testing.T) {
 		t.Error("cursor should be clamped after deselect all")
 	}
 }
+
+// TestGetVisibleChoices_NilSelectedMap tests defensive nil check
+func TestGetVisibleChoices_NilSelectedMap(t *testing.T) {
+	m := &multiSelectModel{
+		choices:      []string{"a.txt", "b.txt", "c.txt"},
+		selected:     nil, // Intentionally nil
+		hideUnlinked: true,
+	}
+
+	// Should not panic, should return empty list
+	visible := m.getVisibleChoices()
+
+	if visible == nil {
+		t.Error("visible should not be nil")
+	}
+	if len(visible) != 0 {
+		t.Errorf("expected empty list with nil selected map, got %d items", len(visible))
+	}
+}
+
+// TestHandleToggleSelection tests space key selection toggling
+func TestHandleToggleSelection(t *testing.T) {
+	m := &multiSelectModel{
+		choices:       []string{"a.txt", "b.txt", "c.txt"},
+		selected:      make(map[string]bool),
+		selectedOrder: []string{},
+		selectedIndex: make(map[string]int),
+		cursor:        0,
+	}
+
+	// Select first item
+	m.handleToggleSelection()
+	if !m.selected["a.txt"] {
+		t.Error("first item should be selected")
+	}
+	if len(m.selectedOrder) != 1 {
+		t.Error("selectedOrder should have 1 item")
+	}
+
+	// Deselect first item
+	m.handleToggleSelection()
+	if m.selected["a.txt"] {
+		t.Error("first item should be deselected")
+	}
+	if len(m.selectedOrder) != 0 {
+		t.Error("selectedOrder should be empty")
+	}
+}
+
+// TestHandleToggleSelection_OutOfBounds tests toggle with invalid cursor
+func TestHandleToggleSelection_OutOfBounds(t *testing.T) {
+	m := &multiSelectModel{
+		choices:       []string{"a.txt"},
+		selected:      make(map[string]bool),
+		selectedOrder: []string{},
+		selectedIndex: make(map[string]int),
+		cursor:        10, // Out of bounds
+	}
+
+	// Should not panic or change state
+	m.handleToggleSelection()
+	if len(m.selected) != 0 {
+		t.Error("nothing should be selected with out of bounds cursor")
+	}
+}
+
+// TestClampCursor_WithFilter tests cursor clamping with filtered list
+func TestClampCursor_WithFilter(t *testing.T) {
+	m := &multiSelectModel{
+		choices:      []string{"apple.txt", "banana.txt", "apricot.txt"},
+		choicesLower: []string{"apple.txt", "banana.txt", "apricot.txt"},
+		filter:       "ap",
+		filtered:     []string{"apple.txt", "apricot.txt"},
+		cursor:       5, // Out of bounds for filtered list
+	}
+
+	m.clampCursor()
+
+	// Cursor should be clamped to last item in ALL choices, not filtered
+	if m.cursor > len(m.choices)-1 {
+		t.Errorf("cursor should be clamped to %d, got %d", len(m.choices)-1, m.cursor)
+	}
+}
+
+// TestUpdateFiltered_NoMatches tests filtering with no matches
+func TestUpdateFiltered_NoMatches(t *testing.T) {
+	m := &multiSelectModel{
+		choices:      []string{"apple.txt", "banana.txt"},
+		choicesLower: []string{"apple.txt", "banana.txt"},
+		filter:       "xyz",
+	}
+
+	m.updateFiltered()
+
+	if len(m.filtered) != 0 {
+		t.Errorf("expected 0 filtered items, got %d", len(m.filtered))
+	}
+}
+
+// TestSwitchToShowAllMode tests mode switching
+func TestSwitchToShowAllMode(t *testing.T) {
+	m := &multiSelectModel{
+		choices:      []string{"a.txt", "b.txt", "c.txt"},
+		selected:     map[string]bool{"b.txt": true},
+		hideUnlinked: true,
+		cursor:       0,
+	}
+
+	m.switchToShowAllMode("b.txt")
+
+	if m.hideUnlinked {
+		t.Error("hideUnlinked should be false after switch")
+	}
+
+	// Cursor should be positioned on b.txt (index 1 in full list)
+	if m.cursor != 1 {
+		t.Errorf("cursor should be on b.txt (index 1), got %d", m.cursor)
+	}
+}
+
+// TestSwitchToShowAllMode_ItemNotFound tests switching when item not found
+func TestSwitchToShowAllMode_ItemNotFound(t *testing.T) {
+	m := &multiSelectModel{
+		choices:      []string{"a.txt", "b.txt", "c.txt"},
+		selected:     make(map[string]bool),
+		hideUnlinked: true,
+		cursor:       5,
+	}
+
+	m.switchToShowAllMode("nonexistent.txt")
+
+	// Cursor should be clamped
+	if m.cursor > len(m.choices)-1 {
+		t.Error("cursor should be clamped when item not found")
+	}
+}
+
+// TestDeselectItem_InHideMode tests deselecting in hide mode
+func TestDeselectItem_InHideMode(t *testing.T) {
+	m := &multiSelectModel{
+		choices: []string{"a.txt", "b.txt", "c.txt"},
+		selected: map[string]bool{
+			"a.txt": true,
+			"b.txt": true,
+			"c.txt": true,
+		},
+		selectedOrder: []string{"a.txt", "b.txt", "c.txt"},
+		selectedIndex: map[string]int{
+			"a.txt": 0,
+			"b.txt": 1,
+			"c.txt": 2,
+		},
+		hideUnlinked: true,
+		cursor:       1,
+	}
+
+	// Deselect b.txt
+	m.deselectItem("b.txt", 1)
+
+	if m.selected["b.txt"] {
+		t.Error("b.txt should be deselected")
+	}
+	if len(m.selectedOrder) != 2 {
+		t.Errorf("selectedOrder should have 2 items, got %d", len(m.selectedOrder))
+	}
+	// hideUnlinked should still be true (not last item)
+	if !m.hideUnlinked {
+		t.Error("hideUnlinked should still be true")
+	}
+}
+
+// TestDeselectItem_LastItemInHideMode tests auto-switch on last deselect
+func TestDeselectItem_LastItemInHideMode(t *testing.T) {
+	m := &multiSelectModel{
+		choices: []string{"a.txt", "b.txt", "c.txt"},
+		selected: map[string]bool{
+			"a.txt": true,
+		},
+		selectedOrder: []string{"a.txt"},
+		selectedIndex: map[string]int{
+			"a.txt": 0,
+		},
+		hideUnlinked: true,
+		cursor:       0,
+	}
+
+	// Deselect last item
+	m.deselectItem("a.txt", 0)
+
+	if m.hideUnlinked {
+		t.Error("hideUnlinked should be auto-disabled after last item deselect")
+	}
+}
+
+// TestAdjustCursorAfterItemRemoved_Advanced tests cursor adjustment with hideUnlinked
+func TestAdjustCursorAfterItemRemoved_Advanced(t *testing.T) {
+	tests := []struct {
+		name           string
+		choices        []string
+		selected       map[string]bool
+		hideUnlinked   bool
+		previousCursor int
+		expectedCursor int
+	}{
+		{
+			name:           "cursor in middle of selected items",
+			choices:        []string{"a.txt", "b.txt", "c.txt", "d.txt", "e.txt"},
+			selected:       map[string]bool{"a.txt": true, "b.txt": true, "c.txt": true},
+			hideUnlinked:   true,
+			previousCursor: 1,
+			expectedCursor: 1,
+		},
+		{
+			name:           "cursor at end after item removed",
+			choices:        []string{"a.txt", "b.txt", "c.txt"},
+			selected:       map[string]bool{"a.txt": true, "b.txt": true},
+			hideUnlinked:   true,
+			previousCursor: 2,
+			expectedCursor: 1,
+		},
+		{
+			name:           "cursor beyond end moves to last",
+			choices:        []string{"a.txt", "b.txt", "c.txt"},
+			selected:       map[string]bool{"a.txt": true},
+			hideUnlinked:   true,
+			previousCursor: 10,
+			expectedCursor: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := &multiSelectModel{
+				choices:      tt.choices,
+				selected:     tt.selected,
+				hideUnlinked: tt.hideUnlinked,
+			}
+			m.adjustCursorAfterItemRemoved(tt.previousCursor)
+
+			if m.cursor != tt.expectedCursor {
+				t.Errorf("expected cursor %d, got %d", tt.expectedCursor, m.cursor)
+			}
+		})
+	}
+}
+
+// TestIsKey tests key matching helper
+func TestIsKey_MultipleKeys(t *testing.T) {
+	tests := []struct {
+		pressed  string
+		keys     []string
+		expected bool
+	}{
+		{"ctrl+c", []string{"ctrl+c", "esc"}, true},
+		{"esc", []string{"ctrl+c", "esc"}, true},
+		{"enter", []string{"ctrl+c", "esc"}, false},
+		{"a", []string{"a", "b", "c"}, true},
+		{"z", []string{"a", "b", "c"}, false},
+	}
+
+	for _, tt := range tests {
+		result := isKey(tt.pressed, tt.keys...)
+		if result != tt.expected {
+			t.Errorf("isKey(%q, %v) = %v, want %v", tt.pressed, tt.keys, result, tt.expected)
+		}
+	}
+}
+
+// TestGetVisibleChoices_CombinedModes tests filter + hideUnlinked + caching
+func TestGetVisibleChoices_CombinedModes(t *testing.T) {
+	m := &multiSelectModel{
+		choices:      []string{"apple.txt", "banana.txt", "apricot.txt", "berry.txt"},
+		choicesLower: []string{"apple.txt", "banana.txt", "apricot.txt", "berry.txt"},
+		filter:       "ap",
+		filtered:     []string{"apple.txt", "apricot.txt"},
+		selected: map[string]bool{
+			"apple.txt": true,
+		},
+		hideUnlinked: true,
+		cacheValid:   false,
+	}
+
+	// First call should cache
+	visible1 := m.getVisibleChoices()
+	if len(visible1) != 1 || visible1[0] != "apple.txt" {
+		t.Errorf("expected [apple.txt], got %v", visible1)
+	}
+	if !m.cacheValid {
+		t.Error("cache should be valid after first call")
+	}
+
+	// Second call should use cache
+	visible2 := m.getVisibleChoices()
+	if len(visible2) != 1 || visible2[0] != "apple.txt" {
+		t.Errorf("expected cached [apple.txt], got %v", visible2)
+	}
+}

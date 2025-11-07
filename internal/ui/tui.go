@@ -437,19 +437,24 @@ func (m *multiSelectModel) getVisibleChoices() []string {
 	// Apply hideUnlinked filter if active
 	var result []string
 	if m.hideUnlinked {
-		visible := make([]string, 0, len(m.selected))
-		selectedCount := len(m.selected)
+		// Defensive: handle nil selected map
+		if m.selected == nil {
+			result = []string{}
+		} else {
+			visible := make([]string, 0, len(m.selected))
+			selectedCount := len(m.selected)
 
-		for _, choice := range baseChoices {
-			if m.selected[choice] {
-				visible = append(visible, choice)
-				// Early exit: all selected items found
-				if len(visible) == selectedCount {
-					break
+			for _, choice := range baseChoices {
+				if m.selected[choice] {
+					visible = append(visible, choice)
+					// Early exit: all selected items found
+					if len(visible) == selectedCount {
+						break
+					}
 				}
 			}
+			result = visible
 		}
-		result = visible
 	} else {
 		result = baseChoices
 	}
