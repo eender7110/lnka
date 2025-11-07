@@ -1,0 +1,415 @@
+package ui
+
+import (
+	"reflect"
+	"testing"
+)
+
+// TestGetVisibleChoices_HideUnlinked tests hideUnlinked mode filtering
+func TestGetVisibleChoices_HideUnlinked(t *testing.T) {
+	m := &multiSelectModel{
+		choices:      []string{"a.txt", "b.txt", "c.txt", "d.txt"},
+		selected:     map[string]bool{"b.txt": true, "d.txt": true},
+		hideUnlinked: true,
+	}
+
+	visible := m.getVisibleChoices()
+
+	if len(visible) != 2 {
+		t.Errorf("expected 2 visible choices, got %d", len(visible))
+	}
+
+	expected := map[string]bool{"b.txt": true, "d.txt": true}
+	for _, v := range visible {
+		if !expected[v] {
+			t.Errorf("unexpected item in visible: %s", v)
+		}
+	}
+}
+
+// TestGetVisibleChoices_WithFilter tests filter mode
+func TestGetVisibleChoices_WithFilter(t *testing.T) {
+	m := &multiSelectModel{
+		choices:      []string{"apple.txt", "banana.txt", "apricot.txt", "berry.txt"},
+		choicesLower: []string{"apple.txt", "banana.txt", "apricot.txt", "berry.txt"},
+		filter:       "ap",
+		filtered:     []string{"apple.txt", "apricot.txt"},
+		selected:     map[string]bool{"apple.txt": true},
+		hideUnlinked: false,
+	}
+
+	visible := m.getVisibleChoices()
+
+	if len(visible) != 2 {
+		t.Errorf("expected 2 visible choices, got %d", len(visible))
+	}
+
+	if visible[0] != "apple.txt" || visible[1] != "apricot.txt" {
+		t.Errorf("unexpected filter results: %v", visible)
+	}
+}
+
+// TestGetVisibleChoices_FilterAndHide tests combined filter and hideUnlinked
+func TestGetVisibleChoices_FilterAndHide(t *testing.T) {
+	m := &multiSelectModel{
+		choices:      []string{"apple.txt", "banana.txt", "apricot.txt", "berry.txt"},
+		choicesLower: []string{"apple.txt", "banana.txt", "apricot.txt", "berry.txt"},
+		filter:       "ap",
+		filtered:     []string{"apple.txt", "apricot.txt"},
+		selected:     map[string]bool{"apple.txt": true},
+		hideUnlinked: true,
+	}
+
+	visible := m.getVisibleChoices()
+
+	if len(visible) != 1 {
+		t.Errorf("expected 1 visible choice, got %d", len(visible))
+	}
+	if len(visible) > 0 && visible[0] != "apple.txt" {
+		t.Errorf("expected 'apple.txt', got '%s'", visible[0])
+	}
+}
+
+// TestGetVisibleChoices_NoFilter tests normal mode without filters
+func TestGetVisibleChoices_NoFilter(t *testing.T) {
+	m := &multiSelectModel{
+		choices:      []string{"a.txt", "b.txt", "c.txt"},
+		selected:     map[string]bool{"a.txt": true},
+		hideUnlinked: false,
+	}
+
+	visible := m.getVisibleChoices()
+
+	if len(visible) != 3 {
+		t.Errorf("expected 3 visible choices, got %d", len(visible))
+	}
+}
+
+// TestGetVisibleChoices_Caching tests that caching works correctly
+func TestGetVisibleChoices_Caching(t *testing.T) {
+	m := &multiSelectModel{
+		choices:      []string{"a.txt", "b.txt", "c.txt"},
+		selected:     map[string]bool{"a.txt": true},
+		hideUnlinked: false,
+	}
+
+	// First call should cache
+	visible1 := m.getVisibleChoices()
+	if !m.cacheValid {
+		t.Error("cache should be valid after first call")
+	}
+
+	// Second call should return cached result
+	visible2 := m.getVisibleChoices()
+	if !reflect.DeepEqual(visible1, visible2) {
+		t.Error("cached result should be identical to first result")
+	}
+
+	// After invalidation, cache should be rebuilt
+	m.cacheValid = false
+	_ = m.getVisibleChoices()
+	if !m.cacheValid {
+		t.Error("cache should be valid after rebuild")
+	}
+}
+
+// TestClampCursor_EmptyList tests cursor clamping with empty list
+func TestClampCursor_EmptyList(t *testing.T) {
+	m := &multiSelectModel{
+		choices: []string{},
+		cursor:  5,
+	}
+
+	m.clampCursor()
+
+	if m.cursor != 0 {
+		t.Errorf("expected cursor 0 for empty list, got %d", m.cursor)
+	}
+}
+
+// TestClampCursor_OutOfBounds tests cursor clamping when out of bounds
+func TestClampCursor_OutOfBounds(t *testing.T) {
+	m := &multiSelectModel{
+		choices: []string{"a.txt", "b.txt", "c.txt"},
+		cursor:  10,
+	}
+
+	m.clampCursor()
+
+	if m.cursor != 2 {
+		t.Errorf("expected cursor 2 (last item), got %d", m.cursor)
+	}
+}
+
+// TestClampCursor_NegativeCursor tests cursor clamping with negative value
+func TestClampCursor_NegativeCursor(t *testing.T) {
+	m := &multiSelectModel{
+		choices: []string{"a.txt", "b.txt", "c.txt"},
+		cursor:  -5,
+	}
+
+	m.clampCursor()
+
+	if m.cursor != 0 {
+		t.Errorf("expected cursor 0, got %d", m.cursor)
+	}
+}
+
+// TestClampCursor_ValidCursor tests that valid cursor is not changed
+func TestClampCursor_ValidCursor(t *testing.T) {
+	m := &multiSelectModel{
+		choices: []string{"a.txt", "b.txt", "c.txt"},
+		cursor:  1,
+	}
+
+	m.clampCursor()
+
+	if m.cursor != 1 {
+		t.Errorf("expected cursor 1, got %d", m.cursor)
+	}
+}
+
+// TestSelectItem tests item selection
+func TestSelectItem(t *testing.T) {
+	m := &multiSelectModel{
+		selected:      make(map[string]bool),
+		selectedOrder: []string{},
+		selectedIndex: make(map[string]int),
+	}
+
+	m.selectItem("test.txt")
+
+	if !m.selected["test.txt"] {
+		t.Error("item should be selected")
+	}
+	if len(m.selectedOrder) != 1 || m.selectedOrder[0] != "test.txt" {
+		t.Error("item should be in selectedOrder")
+	}
+	if m.selectedIndex["test.txt"] != 0 {
+		t.Error("item index should be 0")
+	}
+}
+
+// TestRemoveFromOrder tests removal from selectedOrder
+func TestRemoveFromOrder(t *testing.T) {
+	m := &multiSelectModel{
+		selectedOrder: []string{"a.txt", "b.txt", "c.txt"},
+		selectedIndex: map[string]int{
+			"a.txt": 0,
+			"b.txt": 1,
+			"c.txt": 2,
+		},
+	}
+
+	m.removeFromOrder("b.txt")
+
+	if len(m.selectedOrder) != 2 {
+		t.Errorf("expected 2 items in order, got %d", len(m.selectedOrder))
+	}
+	if m.selectedOrder[0] != "a.txt" || m.selectedOrder[1] != "c.txt" {
+		t.Errorf("unexpected order after removal: %v", m.selectedOrder)
+	}
+	if _, exists := m.selectedIndex["b.txt"]; exists {
+		t.Error("removed item should not be in index")
+	}
+	if m.selectedIndex["a.txt"] != 0 {
+		t.Error("a.txt index should still be 0")
+	}
+	if m.selectedIndex["c.txt"] != 1 {
+		t.Error("c.txt index should be updated to 1")
+	}
+}
+
+// TestRemoveFromOrder_FirstItem tests removing first item
+func TestRemoveFromOrder_FirstItem(t *testing.T) {
+	m := &multiSelectModel{
+		selectedOrder: []string{"a.txt", "b.txt", "c.txt"},
+		selectedIndex: map[string]int{
+			"a.txt": 0,
+			"b.txt": 1,
+			"c.txt": 2,
+		},
+	}
+
+	m.removeFromOrder("a.txt")
+
+	if len(m.selectedOrder) != 2 {
+		t.Errorf("expected 2 items, got %d", len(m.selectedOrder))
+	}
+	if m.selectedOrder[0] != "b.txt" || m.selectedOrder[1] != "c.txt" {
+		t.Errorf("unexpected order: %v", m.selectedOrder)
+	}
+	// Check indices are updated
+	if m.selectedIndex["b.txt"] != 0 {
+		t.Error("b.txt should now be at index 0")
+	}
+	if m.selectedIndex["c.txt"] != 1 {
+		t.Error("c.txt should now be at index 1")
+	}
+}
+
+// TestRemoveFromOrder_LastItem tests removing last item
+func TestRemoveFromOrder_LastItem(t *testing.T) {
+	m := &multiSelectModel{
+		selectedOrder: []string{"a.txt", "b.txt", "c.txt"},
+		selectedIndex: map[string]int{
+			"a.txt": 0,
+			"b.txt": 1,
+			"c.txt": 2,
+		},
+	}
+
+	m.removeFromOrder("c.txt")
+
+	if len(m.selectedOrder) != 2 {
+		t.Errorf("expected 2 items, got %d", len(m.selectedOrder))
+	}
+	if m.selectedOrder[0] != "a.txt" || m.selectedOrder[1] != "b.txt" {
+		t.Errorf("unexpected order: %v", m.selectedOrder)
+	}
+	// Indices should not change for remaining items
+	if m.selectedIndex["a.txt"] != 0 {
+		t.Error("a.txt should still be at index 0")
+	}
+	if m.selectedIndex["b.txt"] != 1 {
+		t.Error("b.txt should still be at index 1")
+	}
+}
+
+// TestRemoveFromOrder_NonExistent tests removing non-existent item
+func TestRemoveFromOrder_NonExistent(t *testing.T) {
+	m := &multiSelectModel{
+		selectedOrder: []string{"a.txt", "b.txt"},
+		selectedIndex: map[string]int{
+			"a.txt": 0,
+			"b.txt": 1,
+		},
+	}
+
+	m.removeFromOrder("nonexistent.txt")
+
+	if len(m.selectedOrder) != 2 {
+		t.Error("order should not change when removing non-existent item")
+	}
+}
+
+// TestUpdateFiltered tests filter update functionality
+func TestUpdateFiltered(t *testing.T) {
+	m := &multiSelectModel{
+		choices:      []string{"apple.txt", "banana.txt", "apricot.txt", "berry.txt"},
+		choicesLower: []string{"apple.txt", "banana.txt", "apricot.txt", "berry.txt"},
+		filter:       "ap",
+	}
+
+	m.updateFiltered()
+
+	if len(m.filtered) != 2 {
+		t.Errorf("expected 2 filtered items, got %d", len(m.filtered))
+	}
+	if m.filtered[0] != "apple.txt" || m.filtered[1] != "apricot.txt" {
+		t.Errorf("unexpected filtered results: %v", m.filtered)
+	}
+}
+
+// TestUpdateFiltered_CaseInsensitive tests case-insensitive filtering
+func TestUpdateFiltered_CaseInsensitive(t *testing.T) {
+	m := &multiSelectModel{
+		choices:      []string{"Apple.txt", "BANANA.txt", "aPRicot.txt"},
+		choicesLower: []string{"apple.txt", "banana.txt", "apricot.txt"},
+		filter:       "AP",
+	}
+
+	m.updateFiltered()
+
+	if len(m.filtered) != 2 {
+		t.Errorf("expected 2 filtered items (case insensitive), got %d", len(m.filtered))
+	}
+}
+
+// TestUpdateFiltered_EmptyFilter tests with empty filter
+func TestUpdateFiltered_EmptyFilter(t *testing.T) {
+	m := &multiSelectModel{
+		choices:      []string{"a.txt", "b.txt", "c.txt"},
+		choicesLower: []string{"a.txt", "b.txt", "c.txt"},
+		filter:       "",
+	}
+
+	m.updateFiltered()
+
+	if len(m.filtered) != 3 {
+		t.Errorf("expected 3 items with empty filter, got %d", len(m.filtered))
+	}
+}
+
+// TestIsKey tests the isKey helper function
+func TestIsKey(t *testing.T) {
+	tests := []struct {
+		name     string
+		pressed  string
+		keys     []string
+		expected bool
+	}{
+		{"match first", "ctrl+c", []string{"ctrl+c", "esc"}, true},
+		{"match second", "esc", []string{"ctrl+c", "esc"}, true},
+		{"no match", "enter", []string{"ctrl+c", "esc"}, false},
+		{"single key match", "h", []string{"h"}, true},
+		{"single key no match", "j", []string{"h"}, false},
+		{"empty keys", "h", []string{}, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := isKey(tt.pressed, tt.keys...)
+			if result != tt.expected {
+				t.Errorf("isKey(%q, %v) = %v, want %v", tt.pressed, tt.keys, result, tt.expected)
+			}
+		})
+	}
+}
+
+// TestAdjustCursorAfterItemRemoved tests cursor adjustment after item removal
+func TestAdjustCursorAfterItemRemoved(t *testing.T) {
+	tests := []struct {
+		name           string
+		choices        []string
+		previousCursor int
+		expectedCursor int
+	}{
+		{
+			name:           "cursor in middle stays",
+			choices:        []string{"a.txt", "b.txt", "c.txt"},
+			previousCursor: 1,
+			expectedCursor: 1,
+		},
+		{
+			name:           "cursor at end moves back",
+			choices:        []string{"a.txt", "b.txt"},
+			previousCursor: 2,
+			expectedCursor: 1,
+		},
+		{
+			name:           "cursor beyond end moves to last",
+			choices:        []string{"a.txt"},
+			previousCursor: 5,
+			expectedCursor: 0,
+		},
+		{
+			name:           "empty list",
+			choices:        []string{},
+			previousCursor: 0,
+			expectedCursor: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := &multiSelectModel{
+				choices: tt.choices,
+			}
+			m.adjustCursorAfterItemRemoved(tt.previousCursor)
+			if m.cursor != tt.expectedCursor {
+				t.Errorf("expected cursor %d, got %d", tt.expectedCursor, m.cursor)
+			}
+		})
+	}
+}
