@@ -663,11 +663,20 @@ func ShowMultiSelect(availableFiles []string, currentlyEnabled []string, title s
 	if len(currentlyEnabled) > 0 {
 		// Find the position of the first selected item in availableFiles
 		firstSelected := currentlyEnabled[0]
+		found := false
 		for i, file := range availableFiles {
 			if file == firstSelected {
 				initialCursor = i
+				found = true
 				break
 			}
+		}
+		// If first selected item not found in availableFiles, cursor stays at 0
+		// This is a defensive measure; in normal operation, currentlyEnabled
+		// should be a subset of availableFiles
+		if !found {
+			// Log or handle the inconsistency if needed
+			// For now, silently default to 0 (first item)
 		}
 	}
 

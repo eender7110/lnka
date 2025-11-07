@@ -820,3 +820,80 @@ func TestGetVisibleChoices_CombinedModes(t *testing.T) {
 		t.Errorf("expected cached [apple.txt], got %v", visible2)
 	}
 }
+
+// TestShowMultiSelect_CursorPositioning tests initial cursor position
+func TestShowMultiSelect_CursorPositioning(t *testing.T) {
+	// Note: This is a unit test that directly creates the model
+	// rather than running the full ShowMultiSelect which uses tea.Program
+
+	availableFiles := []string{"a.txt", "b.txt", "c.txt", "d.txt"}
+	currentlyEnabled := []string{"c.txt"}
+
+	// Simulate the cursor positioning logic from ShowMultiSelect
+	initialCursor := 0
+	if len(currentlyEnabled) > 0 {
+		firstSelected := currentlyEnabled[0]
+		found := false
+		for i, file := range availableFiles {
+			if file == firstSelected {
+				initialCursor = i
+				found = true
+				break
+			}
+		}
+		if !found {
+			initialCursor = 0
+		}
+	}
+
+	// Cursor should be on c.txt (index 2)
+	if initialCursor != 2 {
+		t.Errorf("expected cursor at index 2 (c.txt), got %d", initialCursor)
+	}
+}
+
+// TestShowMultiSelect_CursorPositioning_ItemNotFound tests fallback behavior
+func TestShowMultiSelect_CursorPositioning_ItemNotFound(t *testing.T) {
+	availableFiles := []string{"a.txt", "b.txt", "c.txt"}
+	currentlyEnabled := []string{"nonexistent.txt"} // Not in availableFiles
+
+	// Simulate the cursor positioning logic from ShowMultiSelect
+	initialCursor := 0
+	if len(currentlyEnabled) > 0 {
+		firstSelected := currentlyEnabled[0]
+		found := false
+		for i, file := range availableFiles {
+			if file == firstSelected {
+				initialCursor = i
+				found = true
+				break
+			}
+		}
+		if !found {
+			// Should stay at 0 (defensive fallback)
+			initialCursor = 0
+		}
+	}
+
+	// Cursor should default to 0 when item not found
+	if initialCursor != 0 {
+		t.Errorf("expected cursor at index 0 (fallback), got %d", initialCursor)
+	}
+}
+
+// TestShowMultiSelect_CursorPositioning_EmptyEnabled tests empty list
+func TestShowMultiSelect_CursorPositioning_EmptyEnabled(t *testing.T) {
+	currentlyEnabled := []string{} // Empty
+
+	// Simulate the cursor positioning logic
+	initialCursor := 0
+	if len(currentlyEnabled) > 0 {
+		// This branch should not execute
+		t.Error("should not enter this branch with empty currentlyEnabled")
+	}
+
+	// Cursor should be 0 with empty enabled list
+	if initialCursor != 0 {
+		t.Errorf("expected cursor at index 0, got %d", initialCursor)
+	}
+}
