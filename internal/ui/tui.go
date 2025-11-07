@@ -17,21 +17,49 @@ const (
 	colorNormal = "\033[0m"    // Normal/White
 )
 
+// keyBindings defines all keyboard shortcuts for the multi-select UI
+type keyBindings struct {
+	quit         []string // Quit/abort shortcuts
+	confirm      string   // Confirm selection
+	filter       string   // Enter filter mode
+	hideToggle   string   // Toggle hide unlinked items
+	toggleSelect string   // Toggle item selection
+	up           string   // Move cursor up
+	down         string   // Move cursor down
+	backspace    string   // Delete character in filter mode
+}
+
+// defaultKeyBindings contains the default keyboard shortcuts
+var defaultKeyBindings = keyBindings{
+	quit:         []string{"ctrl+c", "esc"},
+	confirm:      "enter",
+	filter:       "/",
+	hideToggle:   "h",
+	toggleSelect: " ",
+	up:           "up",
+	down:         "down",
+	backspace:    "backspace",
+}
+
 // multiSelectModel is the Bubble Tea model for multi-select UI
 // It manages the state for selecting multiple items from a list
 type multiSelectModel struct {
-	choices         []string        // Available choices
-	choicesLower    []string        // Lowercase versions for efficient filtering
-	selected        map[string]bool // Selected items
-	selectedOrder   []string        // Order of selection for result
-	cursor          int             // Cursor position
-	filter          string          // Filter text
-	filtering       bool            // Filter mode active
-	filtered        []string        // Filtered choices
-	aborted         bool            // User pressed ESC
-	title           string          // Optional title
-	maxVisibleItems int             // Maximum items to show before pagination
-	hideUnlinked    bool            // Hide unlinked items when true
+	choices              []string        // Available choices
+	choicesLower         []string        // Lowercase versions for efficient filtering
+	selected             map[string]bool // Selected items
+	selectedOrder        []string        // Order of selection for result
+	selectedIndex        map[string]int  // Maps choice to position in selectedOrder (for O(1) removal)
+	cursor               int             // Cursor position
+	filter               string          // Filter text
+	filtering            bool            // Filter mode active
+	filtered             []string        // Filtered choices
+	aborted              bool            // User pressed ESC
+	title                string          // Optional title
+	maxVisibleItems      int             // Maximum items to show before pagination
+	hideUnlinked         bool            // Hide unlinked items when true
+	cachedVisibleChoices []string        // Cached result of getVisibleChoices
+	cacheValid           bool            // Whether the cache is valid
+	keys                 keyBindings     // Keyboard shortcuts configuration
 }
 
 // Init initializes the model
@@ -39,18 +67,33 @@ func (m multiSelectModel) Init() tea.Cmd {
 	return nil
 }
 
+// isKey checks if the pressed key matches any of the given keys
+func isKey(pressed string, keys ...string) bool {
+	for _, key := range keys {
+		if pressed == key {
+			return true
+		}
+	}
+	return false
+}
+
 // Update handles messages
 func (m multiSelectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Invalidate cache at the start of each update cycle
+	m.cacheValid = false
+
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "ctrl+c":
+		key := msg.String()
+
+		// Handle quit keys
+		if isKey(key, m.keys.quit...) {
 			m.aborted = true
 			return m, tea.Quit
-		case "esc":
-			m.aborted = true
-			return m, tea.Quit
-		case "enter":
+		}
+
+		// Handle confirm key
+		if key == m.keys.confirm {
 			if !m.filtering {
 				return m, tea.Quit
 			}
@@ -58,80 +101,43 @@ func (m multiSelectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.filtering = false
 			m.clampCursor()
 			return m, nil
-		case "/":
+		}
+
+		// Handle filter key
+		if key == m.keys.filter {
 			if !m.filtering {
 				m.filtering = true
 				// Don't clear the existing filter, just allow editing
 				return m, nil
 			}
-		case "up":
+		}
+
+		// Handle up key
+		if key == m.keys.up {
 			if !m.filtering && m.cursor > 0 {
 				m.cursor--
 			}
-		case "down":
+		}
+
+		// Handle down key
+		if key == m.keys.down {
 			if !m.filtering {
 				choices := m.getVisibleChoices()
 				if m.cursor < len(choices)-1 {
 					m.cursor++
 				}
 			}
-		case " ":
+		}
+
+		// Handle toggle select key
+		if key == m.keys.toggleSelect {
 			if !m.filtering {
-				choices := m.getVisibleChoices()
-				if m.cursor >= 0 && m.cursor < len(choices) {
-					choice := choices[m.cursor]
-					wasSelected := m.selected[choice]
-					currentCursor := m.cursor
-					// Toggle selection
-					if wasSelected {
-						delete(m.selected, choice)
-						// Remove from order
-						for i, s := range m.selectedOrder {
-							if s == choice {
-								m.selectedOrder = append(m.selectedOrder[:i], m.selectedOrder[i+1:]...)
-								break
-							}
-						}
-						// Auto-switch to "show all" if we just deselected the last visible linked item
-						if m.hideUnlinked {
-							hasLinkedItems := false
-							for _, c := range choices {
-								if m.selected[c] {
-									hasLinkedItems = true
-									break
-								}
-							}
-							if !hasLinkedItems {
-								// Switch to "show all" and position cursor on the deselected item
-								m.hideUnlinked = false
-								newChoices := m.getVisibleChoices()
-								// Find the deselected item in the new list
-								for i, c := range newChoices {
-									if c == choice {
-										m.cursor = i
-										return m, nil
-									}
-								}
-								m.clampCursor()
-							} else {
-								// In "linked only" mode, adjust cursor after item disappears
-								newChoices := m.getVisibleChoices()
-								if len(newChoices) > 0 {
-									// Try to stay at same index, or move to previous if at end
-									if currentCursor >= len(newChoices) {
-										m.cursor = len(newChoices) - 1
-									}
-									// cursor stays at same index otherwise
-								}
-							}
-						}
-					} else {
-						m.selected[choice] = true
-						m.selectedOrder = append(m.selectedOrder, choice)
-					}
-				}
+				m.handleToggleSelection()
 			}
-		case "h":
+		}
+
+		// Handle hide toggle key
+		if key == m.keys.hideToggle {
 			if !m.filtering {
 				// Only allow toggle if there are selected items
 				if len(m.selected) > 0 {
@@ -159,19 +165,22 @@ func (m multiSelectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.clampCursor()
 				}
 			}
-		case "backspace":
+		}
+
+		// Handle backspace key
+		if key == m.keys.backspace {
 			if m.filtering && len(m.filter) > 0 {
 				m.filter = m.filter[:len(m.filter)-1]
 				m.updateFiltered()
 				m.clampCursor()
 			}
-		default:
-			// Add character to filter
-			if m.filtering && len(msg.String()) == 1 {
-				m.filter += msg.String()
-				m.updateFiltered()
-				m.clampCursor()
-			}
+		}
+
+		// Add character to filter (if no other key matched)
+		if m.filtering && len(key) == 1 {
+			m.filter += key
+			m.updateFiltered()
+			m.clampCursor()
 		}
 	}
 	return m, nil
@@ -201,6 +210,11 @@ func (m multiSelectModel) View() string {
 		b.WriteString(" ")
 		b.WriteString(colorReset)
 		b.WriteString("\n\n")
+	}
+
+	// Add separator line before list if no title or filter prompt is shown
+	if m.title == "" && !m.filtering {
+		b.WriteString("\n")
 	}
 
 	// Choices
@@ -241,11 +255,18 @@ func (m multiSelectModel) View() string {
 		b.WriteString("\n")
 	}
 
-	// Help text
+	// Help text with pagination info
 	b.WriteString("\n")
 	b.WriteString(colorHelp)
+
+	// Build help text starting with pagination info if applicable
+	helpText := ""
+	if len(choices) > m.maxVisibleItems {
+		helpText = fmt.Sprintf("%d-%d of %d | ", visibleStart+1, visibleEnd, len(choices))
+	}
+
 	if !m.filtering {
-		helpText := "space: toggle | /: filter"
+		helpText += "space: toggle | /: filter"
 		// Add h: option only if there are selected items
 		if len(m.selected) > 0 {
 			if m.hideUnlinked {
@@ -255,17 +276,24 @@ func (m multiSelectModel) View() string {
 			}
 		}
 		helpText += " | enter: confirm | esc: abort"
-		b.WriteString(helpText)
 	} else {
-		b.WriteString("type to filter | enter: exit filter | esc: abort")
+		helpText += "type to filter | enter: exit filter | esc: abort"
 	}
+
+	b.WriteString(helpText)
 	b.WriteString(colorReset)
 
 	return b.String()
 }
 
 // getVisibleChoices returns filtered or all choices, respecting hideUnlinked mode
+// Results are cached within a single update cycle for performance
 func (m *multiSelectModel) getVisibleChoices() []string {
+	// Return cached result if valid
+	if m.cacheValid {
+		return m.cachedVisibleChoices
+	}
+
 	var baseChoices []string
 
 	// Start with filtered or all choices
@@ -276,6 +304,7 @@ func (m *multiSelectModel) getVisibleChoices() []string {
 	}
 
 	// Apply hideUnlinked filter if active
+	var result []string
 	if m.hideUnlinked {
 		visible := make([]string, 0, len(m.selected))
 		for _, choice := range baseChoices {
@@ -283,10 +312,16 @@ func (m *multiSelectModel) getVisibleChoices() []string {
 				visible = append(visible, choice)
 			}
 		}
-		return visible
+		result = visible
+	} else {
+		result = baseChoices
 	}
 
-	return baseChoices
+	// Cache the result
+	m.cachedVisibleChoices = result
+	m.cacheValid = true
+
+	return result
 }
 
 // updateFiltered updates the filtered list
@@ -315,18 +350,124 @@ func (m *multiSelectModel) clampCursor() {
 	}
 }
 
+// handleToggleSelection handles space key press to toggle item selection
+func (m *multiSelectModel) handleToggleSelection() {
+	choices := m.getVisibleChoices()
+	if m.cursor < 0 || m.cursor >= len(choices) {
+		return
+	}
+
+	choice := choices[m.cursor]
+	if m.selected[choice] {
+		m.deselectItem(choice, m.cursor)
+	} else {
+		m.selectItem(choice)
+	}
+}
+
+// selectItem marks an item as selected
+func (m *multiSelectModel) selectItem(choice string) {
+	m.selected[choice] = true
+	m.selectedIndex[choice] = len(m.selectedOrder)
+	m.selectedOrder = append(m.selectedOrder, choice)
+}
+
+// deselectItem removes an item from selection
+func (m *multiSelectModel) deselectItem(choice string, currentCursor int) {
+	delete(m.selected, choice)
+	m.removeFromOrder(choice)
+
+	if m.hideUnlinked {
+		m.handleHideUnlinkedAfterDeselect(choice, currentCursor)
+	}
+}
+
+// removeFromOrder removes a choice from the selectedOrder slice using O(1) index lookup
+func (m *multiSelectModel) removeFromOrder(choice string) {
+	idx, exists := m.selectedIndex[choice]
+	if !exists {
+		return
+	}
+
+	// Remove from order slice
+	m.selectedOrder = append(m.selectedOrder[:idx], m.selectedOrder[idx+1:]...)
+	delete(m.selectedIndex, choice)
+
+	// Update indices for all items after the removed one
+	for i := idx; i < len(m.selectedOrder); i++ {
+		m.selectedIndex[m.selectedOrder[i]] = i
+	}
+}
+
+// handleHideUnlinkedAfterDeselect handles cursor positioning after deselecting in hideUnlinked mode
+func (m *multiSelectModel) handleHideUnlinkedAfterDeselect(deselectedChoice string, currentCursor int) {
+	choices := m.getVisibleChoices()
+
+	// Check if there are any linked items left
+	hasLinkedItems := false
+	for _, c := range choices {
+		if m.selected[c] {
+			hasLinkedItems = true
+			break
+		}
+	}
+
+	if !hasLinkedItems {
+		// Switch to "show all" and position cursor on the deselected item
+		m.switchToShowAllMode(deselectedChoice)
+	} else {
+		// Adjust cursor after item disappears from list
+		m.adjustCursorAfterItemRemoved(currentCursor)
+	}
+}
+
+// switchToShowAllMode switches from "linked only" to "show all" mode
+func (m *multiSelectModel) switchToShowAllMode(cursorItem string) {
+	m.hideUnlinked = false
+	newChoices := m.getVisibleChoices()
+
+	// Find the item in the new list and position cursor on it
+	for i, c := range newChoices {
+		if c == cursorItem {
+			m.cursor = i
+			return
+		}
+	}
+
+	// Fallback: clamp cursor if item not found
+	m.clampCursor()
+}
+
+// adjustCursorAfterItemRemoved adjusts cursor position after an item is removed from visible list
+func (m *multiSelectModel) adjustCursorAfterItemRemoved(previousCursor int) {
+	newChoices := m.getVisibleChoices()
+	if len(newChoices) == 0 {
+		m.cursor = 0
+		return
+	}
+
+	// Try to stay at same index, or move to previous if at end
+	if previousCursor >= len(newChoices) {
+		m.cursor = len(newChoices) - 1
+	} else {
+		m.cursor = previousCursor
+	}
+}
+
 // ShowMultiSelect displays a multi-select UI for choosing files to enable
 func ShowMultiSelect(availableFiles []string, currentlyEnabled []string, title string, maxVisibleItems int) ([]string, error) {
 	if len(availableFiles) == 0 {
 		return nil, fmt.Errorf("no files available to enable")
 	}
 
-	// Create initial selection map and order
+	// Create initial selection map, order, and index
 	selected := make(map[string]bool)
 	selectedOrder := []string{}
-	for _, file := range currentlyEnabled {
+	selectedIndex := make(map[string]int)
+	for i, file := range currentlyEnabled {
 		selected[file] = true
 		selectedOrder = append(selectedOrder, file)
+		selectedIndex[file] = i
 	}
 
 	// Pre-compute lowercase versions for efficient filtering
@@ -335,15 +476,30 @@ func ShowMultiSelect(availableFiles []string, currentlyEnabled []string, title s
 		choicesLower[i] = strings.ToLower(choice)
 	}
 
+	// Find initial cursor position (first selected item if any)
+	initialCursor := 0
+	if len(currentlyEnabled) > 0 {
+		// Find the position of the first selected item in availableFiles
+		firstSelected := currentlyEnabled[0]
+		for i, file := range availableFiles {
+			if file == firstSelected {
+				initialCursor = i
+				break
+			}
+		}
+	}
+
 	// Create model
 	m := multiSelectModel{
 		choices:         availableFiles,
 		choicesLower:    choicesLower,
 		selected:        selected,
 		selectedOrder:   selectedOrder,
-		cursor:          0,
+		selectedIndex:   selectedIndex,
+		cursor:          initialCursor,
 		title:           title,
 		maxVisibleItems: maxVisibleItems,
+		keys:            defaultKeyBindings,
 	}
 
 	// Run the program
