@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // ListAvailableFiles lists all files (not directories) in the source directory
@@ -107,12 +108,36 @@ func CreateSymlink(sourceDir, targetDir, filename string) error {
 		}
 	}
 
+	// Convert both paths to absolute for reliable Rel calculation
+	absSourcePath, err := filepath.Abs(sourcePath)
+	if err != nil {
+		return fmt.Errorf("failed to get absolute source path: %w", err)
+	}
+
+	absTargetDir, err := filepath.Abs(targetDir)
+	if err != nil {
+		return fmt.Errorf("failed to get absolute target directory: %w", err)
+	}
+
 	// Try to create a relative symlink if possible
-	symlinkTarget := sourcePath
-	relPath, err := filepath.Rel(targetDir, sourcePath)
-	if err == nil && !filepath.IsAbs(relPath) && len(relPath) < len(sourcePath) {
-		// Use relative path if it's shorter and valid
-		symlinkTarget = relPath
+	symlinkTarget := absSourcePath
+	relPath, err := filepath.Rel(absTargetDir, absSourcePath)
+	if err == nil && !filepath.IsAbs(relPath) {
+		// Count how many levels up we need to go (count ".." components)
+		upLevels := 0
+		normalized := filepath.ToSlash(relPath)
+		parts := strings.Split(normalized, "/")
+		for _, part := range parts {
+			if part == ".." {
+				upLevels++
+			}
+		}
+
+		// Use relative path only if it's reasonably short (max 5 levels up)
+		// This avoids overly complex paths like ../../../../../../../../var/...
+		if upLevels <= 5 {
+			symlinkTarget = relPath
+		}
 	}
 
 	// Create the symlink
