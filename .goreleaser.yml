@@ -1,0 +1,117 @@
+# GoReleaser configuration for lnka
+version: 2
+
+before:
+  hooks:
+    # Ensure dependencies are up to date
+    - go mod tidy
+    - go mod download
+
+builds:
+  - id: lnka
+    binary: lnka
+    main: .
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+    # Ignore specific platform combinations that don't make sense
+    ignore:
+      - goos: windows
+        goarch: arm64
+
+archives:
+  - id: lnka
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    format: tar.gz
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - README.md
+      - LICENSE
+
+checksum:
+  name_template: 'checksums.txt'
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^ci:'
+      - '^chore:'
+      - Merge pull request
+      - Merge branch
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: 'Bug fixes'
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: 'Enhancements'
+      regexp: '^.*?enhance(\([[:word:]]+\))??!?:.+$'
+      order: 2
+    - title: Others
+      order: 999
+
+release:
+  github:
+    owner: marco-arnold
+    name: lnka
+  draft: false
+  prerelease: auto
+  mode: append
+  header: |
+    ## lnka {{ .Tag }}
+
+    A CLI tool for managing symlinks between source and target directories with an interactive Terminal UI.
+
+    ### Installation
+
+    Download the appropriate binary for your platform below, extract it, and place it in your PATH.
+
+    Or use go install:
+    ```bash
+    go install github.com/marco-arnold/lnka@{{ .Tag }}
+    ```
+  footer: |
+    **Full Changelog**: https://github.com/marco-arnold/lnka/compare/{{ .PreviousTag }}...{{ .Tag }}
+
+# Homebrew formula for macOS/Linux users
+brews:
+  - repository:
+      owner: marco-arnold
+      name: homebrew-lnka
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    homepage: https://github.com/marco-arnold/lnka
+    description: CLI tool for managing symlinks with interactive Terminal UI
+    license: MIT
+    install: |
+      bin.install "lnka"
+    test: |
+      system "#{bin}/lnka", "--version"

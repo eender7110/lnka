@@ -8,6 +8,9 @@
 *.so
 *.dylib
 
+# Built binaries (Linux/macOS)
+/lnka
+
 # Test binary, built with `go test -c`
 *.test
 
@@ -17,16 +20,19 @@ coverage.*
 *.coverprofile
 profile.cov
 
-# Dependency directories (remove the comment below to include it)
-# vendor/
-
 # Go workspace file
 go.work
 go.work.sum
 
-# env file
-.env
+# GoReleaser artifacts
+dist/
+*.tar.gz
+*.zip
+checksums.txt
 
-# Editor/IDE
-# .idea/
-# .vscode/
+# Test artifacts and temporary data
+/test-data/
+output.txt
+
+.env
+.claude/settings.local.json
