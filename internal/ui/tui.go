@@ -267,9 +267,24 @@ func (m multiSelectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Handle toggle selection (Space)
 		if key.Matches(msg, m.keys.Select) {
 			if !isFiltering {
-				m.handleToggleSelection()
+				// Remember current cursor position before toggling
+				var currentFileName string
+				if item := m.list.SelectedItem(); item != nil {
+					if fi, ok := item.(fileItem); ok {
+						currentFileName = fi.name
+					}
+				}
+
+				modeChanged := m.handleToggleSelection()
 				logDebug("Toggle: selectedCount=%d", len(m.selectedMap))
-				// Refresh the current item to update its description
+
+				// If mode changed (hideUnlinked was auto-disabled), rebuild entire list
+				// and preserve cursor on the toggled file
+				if modeChanged {
+					return m, m.rebuildItemsCmdWithCursor(currentFileName)
+				}
+
+				// Otherwise just refresh current item
 				cmd := m.refreshCurrentItem()
 				return m, cmd
 			}
@@ -278,6 +293,14 @@ func (m multiSelectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Handle select all (Ctrl+A)
 		if key.Matches(msg, m.keys.SelectAll) {
 			if !isFiltering {
+				// Remember current cursor position before selecting all
+				var currentFileName string
+				if item := m.list.SelectedItem(); item != nil {
+					if fi, ok := item.(fileItem); ok {
+						currentFileName = fi.name
+					}
+				}
+
 				// Select all visible items
 				countBefore := len(m.selectedMap)
 				for _, item := range m.list.VisibleItems() {
@@ -288,26 +311,34 @@ func (m multiSelectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						}
 					}
 				}
-				logDebug("SelectAll: selected %d new items (total: %d)", len(m.selectedMap)-countBefore, len(m.selectedMap))
-				// Refresh all items
-				return m, m.rebuildItemsCmd()
+				logDebug("SelectAll: selected %d new items (total: %d), preserving cursor on: %s", len(m.selectedMap)-countBefore, len(m.selectedMap), currentFileName)
+				// Refresh all items while preserving cursor position
+				return m, m.rebuildItemsCmdWithCursor(currentFileName)
 			}
 		}
 
 		// Handle deselect all (Ctrl+D)
 		if key.Matches(msg, m.keys.DeselectAll) {
 			if !isFiltering {
+				// Remember current cursor position before deselecting all
+				var currentFileName string
+				if item := m.list.SelectedItem(); item != nil {
+					if fi, ok := item.(fileItem); ok {
+						currentFileName = fi.name
+					}
+				}
+
 				logDebug("DeselectAll: clearing all selections")
 				m.selectedMap = make(map[string]bool)
 				m.selectedOrder = []string{}
 
 				// Auto-disable hideUnlinked if no items are selected
 				if m.shouldDisableHideMode() {
-					logDebug("DeselectAll: disabling hideUnlinked mode")
+					logDebug("DeselectAll: disabling hideUnlinked mode, preserving cursor on: %s", currentFileName)
 					m.hideUnlinked = false
 				}
 
-				return m, m.rebuildItemsCmd()
+				return m, m.rebuildItemsCmdWithCursor(currentFileName)
 			}
 		}
 
@@ -369,16 +400,19 @@ func (m *multiSelectModel) buildItemList() []list.Item {
 }
 
 // handleToggleSelection toggles selection of the current item
-func (m *multiSelectModel) handleToggleSelection() {
+// Returns true if hideUnlinked mode was auto-disabled (requires full list rebuild)
+func (m *multiSelectModel) handleToggleSelection() bool {
 	item := m.list.SelectedItem()
 	if item == nil {
-		return
+		return false
 	}
 
 	fi, ok := item.(fileItem)
 	if !ok {
-		return
+		return false
 	}
+
+	modeChanged := false
 
 	// Toggle selection
 	if m.selectedMap[fi.name] {
@@ -388,13 +422,17 @@ func (m *multiSelectModel) handleToggleSelection() {
 
 		// Auto-disable hideUnlinked if no items are selected
 		if m.shouldDisableHideMode() {
+			logDebug("Toggle: auto-disabling hideUnlinked mode (last item deselected)")
 			m.hideUnlinked = false
+			modeChanged = true
 		}
 	} else {
 		// Select
 		m.selectedMap[fi.name] = true
 		m.selectedOrder = append(m.selectedOrder, fi.name)
 	}
+
+	return modeChanged
 }
 
 // removeFromOrder removes a file from selectedOrder
@@ -438,17 +476,9 @@ func (m *multiSelectModel) refreshCurrentItem() tea.Cmd {
 	return m.list.SetItem(index, updatedItem)
 }
 
-// rebuildItemsCmd returns a command that rebuilds the entire item list
-// Used after operations that change visibility (hideUnlinked toggle, deselect all)
-func (m *multiSelectModel) rebuildItemsCmd() tea.Cmd {
-	return func() tea.Msg {
-		items := m.buildItemList()
-		return itemsRefreshedMsg{items: items}
-	}
-}
-
 // rebuildItemsCmdWithCursor returns a command that rebuilds the item list
 // and preserves cursor position on the specified filename
+// Pass empty string to skip cursor positioning
 func (m *multiSelectModel) rebuildItemsCmdWithCursor(fileName string) tea.Cmd {
 	return func() tea.Msg {
 		items := m.buildItemList()

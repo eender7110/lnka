@@ -223,6 +223,65 @@ func TestHandleToggleSelection_LastItemInHideMode(t *testing.T) {
 	}
 }
 
+func TestHandleToggleSelection_LastItemInHideMode_ReturnsTrue(t *testing.T) {
+	delegate := list.NewDefaultDelegate()
+	l := list.New([]list.Item{
+		fileItem{name: "a.txt", isEnabled: true},
+	}, delegate, 80, 10)
+
+	m := &multiSelectModel{
+		list:           l,
+		availableFiles: []string{"a.txt", "b.txt"},
+		selectedMap:    map[string]bool{"a.txt": true},
+		selectedOrder:  []string{"a.txt"},
+		hideUnlinked:   true,
+	}
+
+	// Deselect the last item
+	m.list.Select(0)
+	modeChanged := m.handleToggleSelection()
+
+	// Should return true indicating mode changed
+	if !modeChanged {
+		t.Error("handleToggleSelection should return true when hideUnlinked mode is auto-disabled")
+	}
+
+	// Should auto-disable hideUnlinked mode
+	if m.hideUnlinked {
+		t.Error("hideUnlinked should be disabled when last item is deselected")
+	}
+}
+
+func TestHandleToggleSelection_NotLastItem_ReturnsFalse(t *testing.T) {
+	delegate := list.NewDefaultDelegate()
+	l := list.New([]list.Item{
+		fileItem{name: "a.txt", isEnabled: true},
+		fileItem{name: "b.txt", isEnabled: true},
+	}, delegate, 80, 10)
+
+	m := &multiSelectModel{
+		list:           l,
+		availableFiles: []string{"a.txt", "b.txt"},
+		selectedMap:    map[string]bool{"a.txt": true, "b.txt": true},
+		selectedOrder:  []string{"a.txt", "b.txt"},
+		hideUnlinked:   true,
+	}
+
+	// Deselect one item (but not the last)
+	m.list.Select(0)
+	modeChanged := m.handleToggleSelection()
+
+	// Should return false as mode doesn't change
+	if modeChanged {
+		t.Error("handleToggleSelection should return false when hideUnlinked mode is not changed")
+	}
+
+	// hideUnlinked should remain enabled
+	if !m.hideUnlinked {
+		t.Error("hideUnlinked should remain enabled when not last item")
+	}
+}
+
 // TestFileItem tests the list.Item interface implementation
 func TestFileItem_FilterValue(t *testing.T) {
 	item := fileItem{name: "test.txt", isEnabled: true}
