@@ -77,6 +77,9 @@ func run(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("failed to setup debug logging: %w", err)
 		}
 		defer f.Close()
+
+		// Enable debug logging in UI package
+		ui.SetDebugEnabled(true)
 	}
 
 	// Load configuration
